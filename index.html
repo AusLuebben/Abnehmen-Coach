@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Abnehm-Coach</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e6b5c">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Abnehm-Coach">
+<style>
+:root{--bg:#f2f6f7;--card:#fff;--ink:#132229;--mut:#5d6f78;--line:#d8e2e6;--pri:#0e6b5c;--onpri:#fff;--acc:#f0b400;--warn:#c2410c;--ok:#15803d;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1a1f;--card:#15262d;--ink:#e7f0f2;--mut:#93a8b0;--line:#26404a;--pri:#3cc2a8;--onpri:#06231d;--acc:#f5c32c;--warn:#fb923c;--ok:#4ade80}}
+:root[data-theme="dark"]{--bg:#0d1a1f;--card:#15262d;--ink:#e7f0f2;--mut:#93a8b0;--line:#26404a;--pri:#3cc2a8;--onpri:#06231d;--acc:#f5c32c;--warn:#fb923c;--ok:#4ade80}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px 16px 96px}
+h1{font-size:1.6rem;line-height:1.2;margin:.3em 0 .4em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 12px}
+label{display:block;font-weight:600;margin:12px 0 4px}
+input,select{width:100%;font:inherit;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 16px;background:var(--pri);color:var(--onpri);cursor:pointer}
+button.sec{background:transparent;color:var(--pri);border:1px solid var(--pri)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.mut{color:var(--mut);font-size:.9rem}
+.bar{display:flex;height:14px;border-radius:7px;overflow:hidden;margin:10px 0}
+.big{font-size:2.4rem;font-weight:800;line-height:1.1}
+.big .mut{font-size:1rem;font-weight:600}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px))}
+nav[hidden]{display:none}
+nav button{flex:1;background:transparent;color:var(--mut);padding:10px 4px;font-size:.9rem;border-radius:0}
+nav button.on{color:var(--pri);box-shadow:inset 0 -3px 0 var(--pri)}
+.meal{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.meal>span:last-child{white-space:nowrap}
+.ov{position:fixed;inset:0;background:var(--bg);z-index:50;overflow:auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+.ov video{width:100%;border-radius:14px;background:#000;max-height:55vh;object-fit:cover;margin:8px 0}
+.scanbar{display:flex;justify-content:space-between;align-items:center}
+table{width:100%;border-collapse:collapse}td{padding:8px 0;border-top:1px solid var(--line);vertical-align:top}td:last-child{text-align:right}
+td button{padding:2px 10px;margin-left:8px}
+.ok{color:var(--ok)}.warn{color:var(--warn)}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<nav id="nav" hidden><button data-t="plan">Plan</button><button data-t="shop">Einkauf</button><button data-t="prog">Fortschritt</button><button data-t="prof">Profil</button></nav>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const eur=n=>n.toLocaleString('de-DE',{style:'currency',currency:'EUR'});
+const de=(n,d=0)=>n.toFixed(d).replace('.',',');
+const fg=g=>g>=1000?de(g/1000,2)+' kg':g+' g';
+const KEY='abnehm-coach-v1';
+let S={p:null,log:[]},tab='plan',step=0,D={},ed=false,C=null;
+try{const r=localStorage.getItem(KEY);if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+// je 100 g: kcal, Protein, Kohlenhydrate, Fett, Preis pro kg, Klasse (0 vegan, 1 vegetarisch, 2 Fleisch/Fisch)
+const I={"Haferflocken":[370,13,60,7,1.8,0],"Magerquark":[67,12,4,.3,2.2,1],"Sojadrink":[40,3.3,2.5,1.8,1.3,0],"Banane":[89,1.1,20,.3,1.7,0],"Beeren (TK)":[45,.8,8,.4,3.5,0],"Eier":[143,12.6,.7,9.9,3.8,1],"Vollkornbrot":[220,8,40,1.5,2.2,0],"Reis (trocken)":[350,7,78,.6,1.8,0],"Vollkornnudeln (trocken)":[350,13,66,2.5,1.6,0],"Kartoffeln":[77,2,17,.1,1,0],"Rote Linsen (trocken)":[340,24,50,1.5,2.8,0],"Kichererbsen (Dose)":[120,7,16,2.5,2.4,0],"Kidneybohnen (Dose)":[105,7,14,.5,2,0],"Tofu":[120,13,2,7,5.5,0],"Sojaschnetzel":[340,50,30,1,6,0],"Hähnchenbrust":[110,23,0,1.5,8,2],"Thunfisch (Dose)":[110,25,0,1,12,2],"Tomaten (Dose)":[24,1.2,4,.2,1.6,0],"Gemüsemix (TK)":[35,2.5,5,.4,2,0],"Brokkoli (TK)":[30,3,3,.4,2.2,0],"Spinat (TK)":[23,2.9,1,.4,2.5,0],"Paprika":[30,1,5,.3,3,0],"Zwiebeln":[40,1.1,9,.1,1.4,0],"Karotten":[41,.9,9,.2,1.2,0],"Apfel":[52,.3,14,.2,2.2,0],"Rapsöl":[900,0,0,100,3,0],"Erdnussmus":[600,25,10,50,6.5,0]};
+const R=[
+["Haferbrei mit Banane","f","Haferflocken 60,Sojadrink 250,Banane 100,Erdnussmus 10","Haferflocken mit Sojadrink aufkochen, 3–4 Min. bei kleiner Hitze köcheln, dabei rühren.|Banane in Scheiben schneiden, unterheben.|Mit Erdnussmus beträufeln."],
+["Quark mit Beeren und Haferflocken","f","Magerquark 200,Beeren (TK) 100,Haferflocken 40","Beeren antauen lassen (Zimmertemperatur oder kurz in der Mikrowelle).|Magerquark glattrühren, Beeren und Haferflocken unterheben."],
+["Rührei auf Vollkornbrot","f","Eier 150,Vollkornbrot 100,Paprika 60,Rapsöl 5","Paprika würfeln, in Rapsöl 2–3 Min. andünsten.|Eier verquirlen, dazugeben, bei mittlerer Hitze unter gelegentlichem Wenden stocken lassen.|Auf getoastetem Vollkornbrot servieren."],
+["Linsen-Tomaten-Reis","m","Rote Linsen (trocken) 70,Reis (trocken) 40,Tomaten (Dose) 200,Zwiebeln 50,Karotten 80,Rapsöl 8","Reis nach Packungsangabe kochen.|Zwiebeln und Karotten würfeln, in Rapsöl andünsten.|Linsen und Tomaten dazugeben, 15–20 Min. köcheln, bis die Linsen weich sind.|Mit dem Reis servieren."],
+["Kichererbsen-Curry mit Reis","m","Kichererbsen (Dose) 200,Reis (trocken) 70,Tomaten (Dose) 150,Spinat (TK) 100,Zwiebeln 50,Rapsöl 8","Reis nach Packungsangabe kochen.|Zwiebeln in Rapsöl andünsten, Kichererbsen (abgetropft) und Tomaten dazugeben.|10 Min. köcheln, Spinat in den letzten 2 Min. unterrühren.|Mit dem Reis servieren."],
+["Tofu-Gemüse-Pfanne mit Reis","m","Tofu 150,Reis (trocken) 70,Gemüsemix (TK) 250,Rapsöl 8","Reis nach Packungsangabe kochen.|Tofu trockentupfen (wichtig, sonst spritzt er beim Braten) und in Würfel schneiden.|In Rapsöl bei hoher Hitze 5–6 Min. goldbraun braten, dabei wenden.|Gemüsemix dazugeben, 5 Min. mitbraten, mit dem Reis servieren."],
+["Sojaschnetzel-Bolognese","m","Sojaschnetzel 40,Vollkornnudeln (trocken) 80,Tomaten (Dose) 200,Zwiebeln 50,Karotten 60,Rapsöl 8","Sojaschnetzel nach Packungsangabe ca. 10 Min. in heißem Wasser einweichen, abgießen und ausdrücken.|Nudeln nach Packungsangabe kochen.|Zwiebeln und Karotten in Rapsöl andünsten, Sojaschnetzel kurz mitbraten.|Tomaten dazugeben, 10 Min. köcheln, über die Nudeln geben."],
+["Bohnen-Reis-Bowl","m","Kidneybohnen (Dose) 200,Reis (trocken) 70,Paprika 100,Zwiebeln 40,Rapsöl 6","Reis nach Packungsangabe kochen.|Paprika und Zwiebeln würfeln, in Rapsöl andünsten.|Kidneybohnen (abgetropft) dazugeben, 5 Min. erwärmen.|Mit dem Reis servieren."],
+["Hähnchen-Reis-Pfanne mit Brokkoli","m","Hähnchenbrust 150,Reis (trocken) 70,Brokkoli (TK) 200,Rapsöl 8","Reis nach Packungsangabe kochen.|Hähnchenbrust in Streifen schneiden, in Rapsöl bei hoher Hitze 6–8 Min. durchbraten.|Brokkoli dazugeben, 4–5 Min. mitbraten.|Mit dem Reis servieren."],
+["Thunfisch-Nudeln","m","Thunfisch (Dose) 100,Vollkornnudeln (trocken) 80,Tomaten (Dose) 200,Zwiebeln 50,Rapsöl 6","Nudeln nach Packungsangabe kochen.|Zwiebeln in Rapsöl andünsten, Tomaten dazugeben, 5 Min. köcheln.|Thunfisch (abgetropft) unterrühren, kurz erwärmen.|Mit den Nudeln vermischen."],
+["Ofenkartoffeln mit Quark","m","Kartoffeln 350,Magerquark 200,Paprika 100,Rapsöl 5","Ofen auf 200 °C vorheizen.|Kartoffeln waschen, halbieren, mit Rapsöl bestreichen, 30–35 Min. backen.|Paprika würfeln, unter den Magerquark rühren.|Kartoffeln mit dem Quark servieren."],
+["Apfel mit Erdnussmus","s","Apfel 200,Erdnussmus 15","Apfel in Spalten schneiden, Erdnussmus dazu servieren oder darauf verteilen."],
+["Quark mit Banane","s","Magerquark 200,Banane 100","Banane zerdrücken oder in Scheiben schneiden, unter den Quark rühren."],
+["Soja-Bananen-Shake","s","Sojadrink 300,Banane 100,Haferflocken 30","Alle Zutaten in einen Mixer geben, 30–60 Sek. mixen, bis die Masse glatt ist."]
+].map(([n,s,i,st])=>{const g=i.split(',').map(t=>{const m=t.match(/^(.*) (\d+)$/);return[m[1],+m[2]]});
+ const t=g.reduce((a,[k,w])=>{const d=I[k];for(let j=0;j<4;j++)a[j]+=d[j]*w/100;a[4]=Math.max(a[4],d[5]);return a},[0,0,0,0,0]);
+ return{n,s,g,k:t[0],p:t[1],c:t[2],f:t[3],d:t[4],st:st.split('|')}});
+const ST={Aldi:1,Lidl:1,Netto:1.03,Marktkauf:1.1,Edeka:1.15,Rewe:1.15};
+const SL={3:['f','m','m'],4:['f','m','s','m'],5:['f','s','m','s','m']};
+const FR={3:[.25,.4,.35],4:[.25,.35,.15,.25],5:[.22,.3,.1,.28,.1]};
+const W=[
+{t:'Dein Ziel',f:[{k:'goal',l:'Wie viel möchtest du abnehmen? (kg)',min:1,max:80},{k:'mo',l:'In wie vielen Monaten?',min:1,max:36}]},
+{t:'Deine Daten',f:[{k:'sex',l:'Geschlecht',o:[['','Bitte wählen'],['w','weiblich'],['m','männlich']]},{k:'a',l:'Alter',min:16,max:90},{k:'h',l:'Größe (cm)',min:120,max:230},{k:'w',l:'Gewicht (kg)',min:40,max:250}]},
+{t:'Training',f:[{k:'act',l:'Wie oft trainierst du pro Woche?',o:[[1.2,'kaum oder nie'],[1.375,'1 bis 3 Mal'],[1.55,'3 bis 5 Mal'],[1.725,'6 bis 7 Mal']],def:1.55}]},
+{t:'Ernährung',f:[{k:'diet',l:'Wie isst du?',o:[[2,'alles'],[1,'vegetarisch'],[0,'vegan']]},{k:'meals',l:'Mahlzeiten pro Tag',o:[[3,'3'],[4,'4'],[5,'5']],def:3},{k:'ex',l:'Was soll nicht auf den Teller? (Abneigungen, Allergien)',t:1,ph:'z. B. Tofu, Erdnuss, Fisch',h:'Der Filter sucht diese Wörter in Rezeptnamen und Zutaten. Bei Allergien prüfe trotzdem jede Zutatenliste.'}]},
+{t:'Budget und Laden',f:[{k:'bud',l:'Wochenbudget fürs Essen (€)',min:10,max:300},{k:'store',l:'Wo kaufst du ein?',o:Object.keys(ST).map(k=>[k,k])}]}
+];
+const MN=['Fe','Ca','B12','I','Zn','Mg','Fol','D'];
+const ML={Fe:'Eisen',Ca:'Calcium',B12:'Vitamin B12',I:'Jod',Zn:'Zink',Mg:'Magnesium',Fol:'Folat',D:'Vitamin D'};
+const MU={Fe:'mg',Ca:'mg',B12:'µg',I:'µg',Zn:'mg',Mg:'mg',Fol:'µg',D:'µg'};
+const MREF={Fe:14,Ca:800,B12:2.5,I:150,Zn:10,Mg:375,Fol:200,D:20};
+const M={"Haferflocken":[4.3,55,0,4,3.6,130,32,0],"Magerquark":[.1,90,.6,15,.6,8,7,0],"Sojadrink":[.3,120,.3,0,.3,15,5,.75],"Banane":[.3,5,0,0,.2,27,20,0],"Beeren (TK)":[.5,20,0,0,.3,12,15,0],"Eier":[1.8,53,1.1,27,1.3,12,47,2.2],"Vollkornbrot":[2.5,40,0,1,1.8,65,30,0],"Reis (trocken)":[.8,10,0,0,1.1,25,8,0],"Vollkornnudeln (trocken)":[3.3,30,0,0,2.5,90,45,0],"Kartoffeln":[.8,10,0,1,.3,23,18,0],"Rote Linsen (trocken)":[7.5,45,0,0,3.6,90,180,0],"Kichererbsen (Dose)":[2,40,0,0,1.3,35,65,0],"Kidneybohnen (Dose)":[2,35,0,0,1,30,50,0],"Tofu":[2,200,0,0,1,30,15,0],"Sojaschnetzel":[7,200,0,0,4,90,200,0],"Hähnchenbrust":[.4,5,.3,3,.7,25,3,.1],"Thunfisch (Dose)":[1,10,2.5,20,.5,25,3,2.3],"Tomaten (Dose)":[.5,15,0,0,.2,10,10,0],"Gemüsemix (TK)":[.5,30,0,0,.3,15,30,0],"Brokkoli (TK)":[.7,45,0,1,.4,20,60,0],"Spinat (TK)":[2.7,100,0,3,.5,60,145,0],"Paprika":[.4,10,0,0,.2,10,15,0],"Zwiebeln":[.2,20,0,1,.2,10,15,0],"Karotten":[.3,30,0,2,.2,10,12,0],"Apfel":[.1,5,0,0,.1,5,3,0],"Rapsöl":[0,0,0,0,0,0,0,0],"Erdnussmus":[1.9,50,0,0,2.8,160,60,0]};
+function microSum(days){
+ const t={};MN.forEach(n=>t[n]=0);
+ days.forEach(d=>d.m.forEach(({r,x})=>r.g.forEach(([k,w])=>{const v=M[k];if(v)MN.forEach((n,i)=>t[n]+=v[i]*w*x/100)})));
+ MN.forEach(n=>t[n]/=7);
+ return t;
+}
+function microHTML(days){
+ const t=microSum(days);
+ const rows=MN.map(n=>{const pct=Math.round(t[n]/MREF[n]*100),col=pct>=90?'var(--ok)':pct<60?'var(--warn)':'var(--acc)';
+  return `<div class="meal"><span>${ML[n]}</span><span style="color:${col}">${Math.round(t[n]*10)/10} ${MU[n]} <span class="mut">(${pct}%)</span></span></div>`}).join('');
+ return `<div class="card"><p class="mut">Mikronährstoffe – Tagesschnitt über die Woche (grobe Schätzung)</p>${rows}<p class="mut">Bezug: EU-Referenzwerte für Erwachsene, bei Vitamin D der höhere Richtwert für wenig Sonnenlicht. Werte aus Standard-Nährwerttabellen, keine Laboranalyse – hängen von Marke und Reifegrad ab. Vitamin D kommt hauptsächlich über die Haut durchs Sonnenlicht, kaum übers Essen.</p></div>`;
+}
+function calc(p){
+ const bmr=10*p.w+6.25*p.h-5*p.a+(p.sex=='m'?5:-161),tdee=bmr*p.act,def=p.goal*7700/(p.mo*30.4),min=p.sex=='m'?1500:1200;
+ const kcal=Math.round(Math.max(tdee-def,min)/10)*10,wk=p.goal/(p.mo*4.35);
+ const pr=Math.round(Math.min(1.6*p.w,.3*kcal/4)),fa=Math.round(.27*kcal/9),ca=Math.round((kcal-pr*4-fa*9)/4);
+ return{kcal,wk,pr,fa,ca,cut:tdee-def<min};
+}
+function plan(p,T){
+ const ex=(p.ex||'').toLowerCase().split(/[,;]+/).map(s=>s.trim()).filter(Boolean);
+ const ok=r=>r.d<=p.diet&&!ex.some(w=>(r.n+' '+r.g.map(x=>x[0]).join(' ')).toLowerCase().includes(w));
+ const pool={f:[],m:[],s:[]};R.forEach(r=>ok(r)&&pool[r.s].push(r));
+ const sl=SL[p.meals],fr=FR[p.meals];
+ if(sl.some(s=>!pool[s].length))return null;
+ let seed=7,prev=[];const rnd=()=>(seed=seed*16807%2147483647)/2147483647,days=[];
+ for(let d=0;d<7;d++){
+  let best=null;
+  for(let n=0;n<80;n++){
+   const m=sl.map((s,i)=>{const r=pool[s][Math.floor(rnd()*pool[s].length)];return{r,x:Math.min(2.2,Math.max(.5,fr[i]*T.kcal/r.k))}});
+   const t=m.reduce((a,{r,x})=>({k:a.k+r.k*x,p:a.p+r.p*x,c:a.c+r.c*x,f:a.f+r.f*x}),{k:0,p:0,c:0,f:0});
+   let e=((t.p-T.pr)/T.pr)**2+((t.c-T.ca)/T.ca)**2+((t.f-T.fa)/T.fa)**2+4*((t.k-T.kcal)/T.kcal)**2;
+   e+=.15*m.filter(({r})=>r.s=='m'&&prev.includes(r.n)).length+(new Set(m.map(o=>o.r.n)).size<m.length?.3:0);
+   if(!best||e<best.e)best={e,m,t};
+  }
+  prev=best.m.map(o=>o.r.n);days.push(best);
+ }
+ return days;
+}
+function shop(days,p){
+ const a={};days.forEach(d=>d.m.forEach(({r,x})=>r.g.forEach(([k,w])=>a[k]=(a[k]||0)+w*x)));
+ return Object.entries(a).map(([k,g])=>({k,g:Math.ceil(g/10)*10,c:g/1000*I[k][4]*ST[p.store]})).sort((u,v)=>v.c-u.c);
+}
+const cur=()=>C||(C=(()=>{const T=calc(S.p);return{T,days:plan(S.p,T)}})());
+function wiz(){
+ const s=W[step];$('#nav').hidden=true;
+ $('#app').innerHTML=`<h1>${s.t}</h1><p class="mut">Schritt ${step+1} von ${W.length}${step?'':'. Deine Angaben bleiben nur auf diesem Gerät gespeichert.'}</p><div class="card">`+s.f.map(f=>{
+  const v=D[f.k]??f.def??'';
+  const inp=f.o?`<select id="f_${f.k}">${f.o.map(([a,b])=>`<option value="${a}"${String(a)===String(v)?' selected':''}>${b}</option>`).join('')}</select>`
+  :`<input id="f_${f.k}" ${f.t?'type="text"':`type="number" inputmode="decimal" min="${f.min}" max="${f.max}"`} value="${esc(v)}" placeholder="${esc(f.ph||'')}">`;
+  return `<label for="f_${f.k}">${f.l}</label>${inp}${f.h?`<p class="mut">${f.h}</p>`:''}`}).join('')
+ +`</div><p id="err" class="warn" role="alert"></p><div class="row">${step?'<button class="sec" id="back">Zurück</button>':''}<button id="next">${step==W.length-1?'Plan erstellen':'Weiter'}</button></div>`;
+ if(step)$('#back').onclick=()=>{collect(s,1);step--;wiz()};
+ $('#next').onclick=()=>{const e=collect(s);if(e){$('#err').textContent=e;return}
+  if(step<W.length-1){step++;wiz()}else{S.p={...D};save();C=null;ed=false;tab='plan';render()}};
+}
+function collect(s,soft){
+ for(const f of s.f){const v=$('#f_'+f.k).value.trim();
+  if(f.o){if(v===''&&!soft)return `Bitte triff eine Auswahl bei „${f.l}“.`;D[f.k]=v===''?'':isNaN(v)?v:+v}
+  else if(f.t)D[f.k]=v;
+  else{const n=parseFloat(v.replace(',','.'));if(!soft&&!(n>=f.min&&n<=f.max))return `Bitte gib bei „${f.l}“ einen Wert von ${f.min} bis ${f.max} ein.`;D[f.k]=isNaN(n)?'':n}}
+}
+function planView(){
+ const {T,days}=cur(),p=S.p;
+ if(!days)return '<h1>Dein Plan</h1><div class="card"><p class="warn">Mit deiner Ausschlussliste bleibt für eine Mahlzeit kein Rezept übrig. Kürze die Liste im Profil.</p></div>';
+ const wt=T.cut?`Für dein Ziel in ${p.mo} Monaten müsste dein Tagesbudget unter das sichere Minimum fallen. Der Plan hält dieses Minimum ein, das Ziel dauert entsprechend länger.`:T.wk>Math.max(1,.01*p.w)?'Das Tempo ist sehr hoch. Ein längerer Zeitraum ist gesünder und leichter durchzuhalten.':'';
+ let h=`<h1>Dein Plan</h1><div class="card"><div class="big">${T.kcal} <span class="mut">kcal pro Tag</span></div><div class="bar" role="img" aria-label="Anteile von Protein, Kohlenhydraten und Fett"><i style="flex:${T.pr*4};background:var(--pri)"></i><i style="flex:${T.ca*4};background:var(--acc)"></i><i style="flex:${T.fa*9};background:var(--mut)"></i></div><div class="row"><div><b>${T.pr} g</b><br><span class="mut">Protein</span></div><div><b>${T.ca} g</b><br><span class="mut">Kohlenhydrate</span></div><div><b>${T.fa} g</b><br><span class="mut">Fett</span></div></div><p class="mut">Tempo: ${de(T.wk,2)} kg pro Woche</p>${wt?`<p class="warn">${wt}</p>`:''}</div><p class="mut">Tippe auf eine Mahlzeit für Zutaten und Zubereitung.</p>`+microHTML(days);
+ days.forEach((d,i)=>{h+=`<div class="card"><b>Tag ${i+1}</b> <span class="mut">${Math.round(d.t.k)} kcal, Protein ${Math.round(d.t.p)} g, Kohlenhydrate ${Math.round(d.t.c)} g, Fett ${Math.round(d.t.f)} g</span>`+d.m.map(({r,x},j)=>`<div class="meal" data-d="${i}" data-m="${j}" style="cursor:pointer"><span>${esc(r.n)}<br><span class="mut">${r.g.map(([k,w])=>esc(k)+' '+Math.max(5,Math.round(w*x/5)*5)+' g').join(', ')}</span></span><span>${Math.round(r.k*x)} kcal</span></div>`).join('')+'</div>'});
+ return h+'<p class="mut">Die Makros werden über den ganzen Tag erreicht, nicht in jedem einzelnen Rezept. Richtwerte, keine medizinische Beratung.</p>';
+}
+function shopView(){
+ const {days}=cur(),p=S.p;
+ if(!days)return '<h1>Einkauf</h1><div class="card"><p class="warn">Kürze zuerst die Ausschlussliste im Profil.</p></div>';
+ const L=shop(days,p),tot=L.reduce((a,x)=>a+x.c,0),over=tot>p.bud;
+ return `<h1>Einkauf für 7 Tage</h1><div class="card"><button id="scanbtn">📷 Produkt im Laden abgleichen</button><p class="mut">Barcode scannen, Claude schätzt die Nährwerte.</p></div><div class="card"><div class="big ${over?'warn':'ok'}">${eur(tot)}</div><p class="mut">Geschätzt für ${esc(p.store)}. Dein Budget: ${eur(p.bud)}</p><p class="${over?'warn':'ok'}">${over?`Das sind ${eur(tot-p.bud)} zu viel. Ändere im Profil den Laden oder das Budget.`:'Das passt in dein Budget.'}</p></div><div class="card"><table>${L.map(x=>`<tr><td>${esc(x.k)}<br><span class="mut">${fg(x.g)}</span><br><button class="sec" data-pk="${esc(x.k)}" style="padding:2px 10px;margin-top:4px;font-size:.85rem">🔍 Produkt bei ${esc(p.store)}</button><div class="mut" data-pr></div></td><td>${eur(x.c)}</td></tr>`).join('')}</table></div><p class="mut">Richtwerte auf Discounter-Niveau, keine Live-Preise. Packungsgrößen und Angebote verändern den Betrag. Der Produkt-Button fragt Claude nach einem typischen Beispiel – ohne Internetzugriff, also ungeprüft. Preis und Sortiment hängen zudem von der Filiale ab.</p>`;
+}
+function progView(){
+ const p=S.p,L=[...S.log].sort((a,b)=>a.d<b.d?-1:1),now=L.length?L[L.length-1].w:p.w,lost=Math.max(p.w-now,0),pct=Math.min(100,lost/p.goal*100),ws=[p.w,...L.map(x=>x.w)];
+ let sv='';
+ if(ws.length>1){const mn=Math.min(...ws),sp=(Math.max(...ws)-mn)||1;sv=`<svg viewBox="0 0 300 80" width="100%" role="img" aria-label="Gewichtsverlauf"><polyline fill="none" stroke="var(--pri)" stroke-width="3" points="${ws.map((w,i)=>`${5+i/(ws.length-1)*290},${70-(w-mn)/sp*60}`).join(' ')}"/></svg>`}
+ const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+ return `<h1>Fortschritt</h1><div class="card"><div class="big">${de(lost,1)} kg <span class="mut">von ${p.goal} kg geschafft</span></div><div class="bar" role="img" aria-label="${Math.round(pct)} Prozent des Ziels"><i style="flex:${pct};background:var(--pri)"></i><i style="flex:${100-pct};background:var(--line)"></i></div><p class="mut">Start ${de(p.w,1)} kg, jetzt ${de(now,1)} kg</p>${sv}</div>
+<div class="card"><label for="d">Datum</label><input id="d" type="date" value="${today}"><div class="row"><div><label for="w">Gewicht (kg)</label><input id="w" type="number" inputmode="decimal" step="0.1"></div><div><label for="wa">Taille (cm)</label><input id="wa" type="number" inputmode="decimal"></div></div><div class="row"><div><label for="hi">Hüfte (cm)</label><input id="hi" type="number" inputmode="decimal"></div><div><label for="br">Brust (cm)</label><input id="br" type="number" inputmode="decimal"></div></div><p id="perr" class="warn" role="alert"></p><button id="add">Eintrag speichern</button></div>
+<div class="card"><table>${[...L].reverse().map(x=>`<tr><td>${x.d.split('-').reverse().join('.')}<br><span class="mut">Taille ${x.wa||'-'}, Hüfte ${x.hi||'-'}, Brust ${x.br||'-'} cm</span></td><td>${de(x.w,1)} kg<button class="sec" data-i="${S.log.indexOf(x)}" aria-label="Eintrag löschen">×</button></td></tr>`).join('')||'<tr><td>Noch kein Eintrag. Trag dein aktuelles Gewicht ein.</td></tr>'}</table></div>`;
+}
+function profView(){
+ const p=S.p;
+ return `<h1>Profil</h1><div class="card"><table><tr><td>Ziel</td><td>${p.goal} kg in ${p.mo} Monaten</td></tr><tr><td>Körper</td><td>${p.a} Jahre, ${p.h} cm, ${de(p.w,1)} kg</td></tr><tr><td>Ernährung</td><td>${['vegan','vegetarisch','alles'][p.diet]}, ${p.meals} Mahlzeiten</td></tr><tr><td>Ausgeschlossen</td><td>${esc(p.ex||'nichts')}</td></tr><tr><td>Einkauf</td><td>${esc(p.store)}, ${eur(p.bud)} pro Woche</td></tr></table></div><div class="row"><button id="edit">Angaben ändern</button><button class="sec" id="wipe">Alles löschen</button></div><p class="mut">Alle Daten liegen nur auf diesem Gerät. Wer den Link auf einem anderen Gerät öffnet, startet mit eigenen, leeren Daten.</p>`;
+}
+function bind(){
+ if(tab=='plan'){document.querySelectorAll('.meal[data-d]').forEach(el=>el.onclick=()=>{const{days}=cur();const mm=days[+el.dataset.d].m[+el.dataset.m];recipeOv(mm.r,mm.x)})}
+ if(tab=='shop'){const sb=$('#scanbtn');if(sb)sb.onclick=openScan;document.querySelectorAll('[data-pk]').forEach(b=>b.onclick=()=>lookupProduct(b.dataset.pk,b))}
+ if(tab=='prog'){
+  $('#add').onclick=()=>{const g=id=>{const v=parseFloat($('#'+id).value.replace(',','.'));return v>0?v:0},w=g('w');
+   if(w<30||w>300){$('#perr').textContent='Bitte trag ein Gewicht zwischen 30 und 300 kg ein.';return}
+   S.log.push({d:$('#d').value,w,wa:g('wa'),hi:g('hi'),br:g('br')});save();render()};
+  document.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{S.log.splice(+b.dataset.i,1);save();render()});
+ }
+ if(tab=='prof'){
+  $('#edit').onclick=()=>{D={...S.p};step=0;ed=true;render()};
+  let armed=0;$('#wipe').onclick=e=>{if(!armed){armed=1;e.target.textContent='Wirklich alles löschen?';return}S={p:null,log:[]};save();C=null;D={};step=0;render()};
+ }
+}
+async function lookupProduct(name,btn){
+ const out=btn.nextElementSibling;out.textContent='Suche Beispielprodukt…';
+ if(!window.claude||!window.claude.use){out.textContent='Hier nicht verfügbar.';return}
+ try{
+  const sample=await window.claude.use('sample');
+  if(!sample){out.textContent='Nicht verfügbar oder nicht erlaubt.';return}
+  const pr=`Nenne ein reales, typisches Produkt für die Zutat "${name}", wie es üblicherweise bei ${S.p.store} in Deutschland steht. Antworte NUR mit JSON: {"marke":"...","packung":"z. B. 400 g","preis":0}. preis ist ein ungefährer Euro-Betrag als Zahl, Richtwert.`;
+  const d=await sample.json(pr,{modelTier:'quick'});
+  out.innerHTML=`${esc(d.marke||'?')}, ${esc(d.packung||'')}${d.preis?', ca. '+eur(+d.preis):''} · ungeprüft`;
+ }catch(e){out.textContent='Hat nicht geklappt, noch mal versuchen?'}
+}
+function recipeOv(r,x){
+ const ing=r.g.map(([k,w])=>`<div class="meal"><span>${esc(k)}</span><span>${Math.max(5,Math.round(w*x/5)*5)} g</span></div>`).join('');
+ const steps=(r.st||[]).map(s=>'<li>'+esc(s)+'</li>').join('');
+ document.body.insertAdjacentHTML('beforeend',`<div class="ov" id="ovr"><div class="scanbar"><b>${esc(r.n)}</b><button class="sec" id="ovrclose">Schließen</button></div><p class="mut">${Math.round(r.k*x)} kcal für deine Portion</p><div class="card"><p class="mut">Zutaten für deine Portion</p>${ing}</div><div class="card"><p class="mut">Zubereitung</p>${steps?`<ol style="margin:0;padding-left:20px">${steps}</ol>`:'<p class="mut">Keine Zubereitung nötig.</p>'}</div></div>`);
+ $('#ovrclose').onclick=()=>{const o=$('#ovr');if(o)o.remove()};
+}
+let reader=null,scanning=false;
+function scanHTML(){return `<div class="ov" id="ovv"><div class="scanbar"><b>Produkt scannen</b><button class="sec" id="ovclose">Schließen</button></div><video id="vid" muted playsinline autoplay></video><p id="ovstat" class="mut">Kamera wird gestartet…</p><div class="card"><label for="pname">Produktname (optional, hilft bei der Schätzung)</label><input id="pname" type="text" placeholder="z. B. Nutella 400 g"><label for="pcode">Barcode</label><input id="pcode" type="text" placeholder="wird beim Scannen ausgefüllt, oder eintippen"><div class="row"><button id="est">Nährwerte schätzen</button></div><div id="eres"></div></div></div>`}
+function openScan(){
+ document.body.insertAdjacentHTML('beforeend',scanHTML());
+ $('#ovclose').onclick=closeScan;$('#est').onclick=doEstimate;
+ if(!window.ZXing||!navigator.mediaDevices){$('#ovstat').textContent='Kamera-Scan hier nicht verfügbar. Barcode oder Namen von Hand eintragen.';return}
+ try{
+  reader=new ZXing.BrowserMultiFormatReader();scanning=true;
+  reader.decodeFromConstraints({video:{facingMode:{ideal:'environment'}}},'vid',(res)=>{
+   if(res&&scanning){scanning=false;$('#pcode').value=res.getText();$('#ovstat').textContent='Erkannt: '+res.getText();try{reader.reset()}catch(e){}}
+  });
+ }catch(e){$('#ovstat').textContent='Kamera nicht verfügbar. Barcode oder Namen von Hand eintragen.'}
+}
+function closeScan(){scanning=false;try{reader&&reader.reset()}catch(e){}const o=$('#ovv');if(o)o.remove()}
+async function doEstimate(){
+ const code=$('#pcode').value.trim(),name=$('#pname').value.trim(),box=$('#eres');
+ if(!code&&!name){box.innerHTML='<p class="warn">Bitte Barcode oder Produktname eingeben.</p>';return}
+ box.innerHTML='<p class="mut">Frage Claude nach Schätzwerten…</p>';
+ if(!window.claude||!window.claude.use){box.innerHTML='<p class="warn">Diese Funktion steht hier nicht zur Verfügung.</p>';return}
+ try{
+  const sample=await window.claude.use('sample');
+  if(!sample){box.innerHTML='<p class="warn">Nicht verfügbar oder nicht erlaubt.</p>';return}
+  const p=`Schätze die Nährwerte pro 100 g für ein Supermarktprodukt in Deutschland. Barcode: ${code||'unbekannt'}. Produktname: ${name||'unbekannt'}. Antworte NUR mit JSON: {"name":"...","kcal":0,"protein":0,"kh":0,"fett":0,"hinweis":"kurzer Hinweis falls unsicher, sonst leer"}. Zahlen pro 100 g.`;
+  const d=await sample.json(p,{modelTier:'quick'});
+  box.innerHTML=`<p><b>${esc(d.name||name||'Produkt')}</b> <span class="mut">(pro 100 g, geschätzt)</span></p><div class="meal"><span>Kalorien</span><span>${Math.round(+d.kcal||0)} kcal</span></div><div class="meal"><span>Protein</span><span>${de(+d.protein||0,1)} g</span></div><div class="meal"><span>Kohlenhydrate</span><span>${de(+d.kh||0,1)} g</span></div><div class="meal"><span>Fett</span><span>${de(+d.fett||0,1)} g</span></div>${d.hinweis?`<p class="mut">${esc(d.hinweis)}</p>`:''}<p class="mut">Schätzung ohne Produktdatenbank – bei Allergien immer das echte Etikett prüfen.</p>`;
+ }catch(e){
+  const c=e&&e.code;
+  box.innerHTML='<p class="warn">'+(c=='not_granted'?'Dafür fehlt die Erlaubnis.':c=='rate_limited'?'Gerade zu viele Anfragen, bitte kurz warten.':'Schätzung hat nicht geklappt. Noch mal versuchen?')+'</p>';
+ }
+}
+function render(){
+ if(!S.p||ed){wiz();return}
+ $('#nav').hidden=false;
+ document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+ $('#app').innerHTML={plan:planView,shop:shopView,prog:progView,prof:profView}[tab]();
+ bind();window.scrollTo(0,0);
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});
+render();
+</script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('service-worker.js').catch(()=>{})})}</script>
+</body>
+</html>
